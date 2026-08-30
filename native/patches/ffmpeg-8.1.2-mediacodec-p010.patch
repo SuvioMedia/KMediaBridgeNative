@@ -1,0 +1,97 @@
+diff --git a/libavcodec/mediacodec_sw_buffer.c b/libavcodec/mediacodec_sw_buffer.c
+index 5dfdc931d2..c9c665aa31 100644
+--- a/libavcodec/mediacodec_sw_buffer.c
++++ b/libavcodec/mediacodec_sw_buffer.c
+@@ -169,6 +169,43 @@ void ff_mediacodec_sw_buffer_copy_yuv420_semi_planar(AVCodecContext *avctx,
+     }
+ }
+
++int ff_mediacodec_sw_buffer_copy_p010(AVCodecContext *avctx,
++                                        MediaCodecDecContext *s,
++                                        uint8_t *data,
++                                        size_t size,
++                                        FFAMediaCodecBufferInfo *info,
++                                        AVFrame *frame)
++{
++    const int source_stride = s->stride * 2;
++    const int source_slice_height = s->slice_height;
++    const size_t required_size = (size_t)source_stride * source_slice_height * 3 / 2;
++    int plane;
++
++    if (info->offset < 0 || (size_t)info->offset > size ||
++        required_size > size - (size_t)info->offset) {
++        av_log(avctx, AV_LOG_ERROR, "MediaCodec P010 output buffer is truncated\n");
++        return AVERROR_INVALIDDATA;
++    }
++
++    for (plane = 0; plane < 2; ++plane) {
++        const int height = plane == 0 ? avctx->height : avctx->height / 2;
++        const int source_plane_offset = plane == 0 ? 0 : source_stride * source_slice_height;
++        const int crop_top = plane == 0 ? s->crop_top : s->crop_top / 2;
++        const uint8_t *source = data + info->offset + source_plane_offset +
++            crop_top * source_stride + s->crop_left * 2;
++        uint8_t *destination = frame->data[plane];
++        const int copy_width = FFMIN(frame->linesize[plane], FFALIGN(avctx->width, 2) * 2);
++        int row;
++
++        for (row = 0; row < height; ++row) {
++            memcpy(destination, source, copy_width);
++            source += source_stride;
++            destination += frame->linesize[plane];
++        }
++    }
++    return 0;
++}
++
+
+
+ void ff_mediacodec_sw_buffer_copy_yuv420_packed_semi_planar(AVCodecContext *avctx,
+diff --git a/libavcodec/mediacodec_sw_buffer.h b/libavcodec/mediacodec_sw_buffer.h
+index 59f59754af..4ac5e5dac0 100644
+--- a/libavcodec/mediacodec_sw_buffer.h
++++ b/libavcodec/mediacodec_sw_buffer.h
+@@ -45,6 +45,13 @@ void ff_mediacodec_sw_buffer_copy_yuv420_semi_planar(AVCodecContext *avctx,
+                                                      FFAMediaCodecBufferInfo *info,
+                                                      AVFrame *frame);
+
++int ff_mediacodec_sw_buffer_copy_p010(AVCodecContext *avctx,
++                                       MediaCodecDecContext *s,
++                                       uint8_t *data,
++                                       size_t size,
++                                       FFAMediaCodecBufferInfo *info,
++                                       AVFrame *frame);
++
+ void ff_mediacodec_sw_buffer_copy_yuv420_packed_semi_planar(AVCodecContext *avctx,
+                                                      MediaCodecDecContext *s,
+                                                      uint8_t *data,
+diff --git a/libavcodec/mediacodecdec_common.c b/libavcodec/mediacodecdec_common.c
+index 78e83e51e0..998b66a1ee 100644
+--- a/libavcodec/mediacodecdec_common.c
++++ b/libavcodec/mediacodecdec_common.c
+@@ -191,5 +191,6 @@ enum {
+     COLOR_FormatYUV420SemiPlanar                          = 0x15,
+     COLOR_FormatYCbYCr                                    = 0x19,
++    COLOR_FormatYUVP010                                   = 0x36,
+     COLOR_FormatAndroidOpaque                             = 0x7F000789,
+     COLOR_QCOM_FormatYUV420SemiPlanar                     = 0x7fa30c00,
+     COLOR_QCOM_FormatYUV420SemiPlanar32m                  = 0x7fa30c04,
+@@ -211,6 +212,7 @@ static const struct {
+
+     { COLOR_FormatYUV420Planar,                              AV_PIX_FMT_YUV420P },
+     { COLOR_FormatYUV420SemiPlanar,                          AV_PIX_FMT_NV12    },
++    { COLOR_FormatYUVP010,                                   AV_PIX_FMT_P010    },
+     { COLOR_QCOM_FormatYUV420SemiPlanar,                     AV_PIX_FMT_NV12    },
+     { COLOR_QCOM_FormatYUV420SemiPlanar32m,                  AV_PIX_FMT_NV12    },
+     { COLOR_QCOM_FormatYUV420PackedSemiPlanar64x32Tile2m8ka, AV_PIX_FMT_NV12    },
+@@ -493,6 +495,11 @@ static int mediacodec_wrap_sw_video_buffer(AVCodecContext *avctx,
+     case COLOR_QCOM_FormatYUV420SemiPlanar32m:
+         ff_mediacodec_sw_buffer_copy_yuv420_semi_planar(avctx, s, data, size, info, frame);
+         break;
++    case COLOR_FormatYUVP010:
++        ret = ff_mediacodec_sw_buffer_copy_p010(avctx, s, data, size, info, frame);
++        if (ret < 0)
++            goto done;
++        break;
+     case COLOR_TI_FormatYUV420PackedSemiPlanar:
+     case COLOR_TI_FormatYUV420PackedSemiPlanarInterlaced:
+         ff_mediacodec_sw_buffer_copy_yuv420_packed_semi_planar(avctx, s, data, size, info, frame);

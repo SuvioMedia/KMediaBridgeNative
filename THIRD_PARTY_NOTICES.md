@@ -12,7 +12,7 @@ Its release contains the corresponding sources, patches, build arguments,
 notices, SBOM and checksums. The exact source-archive URL and SHA-256 are copied
 from that runtime release into every KMediaBridge client manifest.
 
-- Runtime project: https://github.com/Shusek/KMediaFfmpegRuntime
+- Runtime project: https://github.com/SuvioMedia/KMediaFfmpegRuntime
 - FFmpeg legal information: https://ffmpeg.org/legal.html
 
 No FFmpeg or other upstream trademark rights are granted by this project.

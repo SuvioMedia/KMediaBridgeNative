@@ -31,6 +31,13 @@ jobs:
             echo 'Public LGPL builds must use GitHub-hosted runners.' >&2
             exit 1
           fi
+          if grep -R --exclude=ci.yml -nF 'repo.suviomedia.cc' .github/workflows; then
+            echo 'Public LGPL releases must use Maven Central, not private kkRepo.' >&2
+            exit 1
+          fi
+
+      - name: Test the closed release and Maven Central boundary
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 
       - name: Check out immutable public FFmpeg runtime
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

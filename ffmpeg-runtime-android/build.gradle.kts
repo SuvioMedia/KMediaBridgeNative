@@ -121,7 +121,11 @@ mavenPublishing {
             }
         }
         developers { developer { id.set("SuvioMedia"); name.set("SuvioMedia") } }
-        scm { url.set("https://github.com/SuvioMedia/KMediaBridgeNative") }
+        scm {
+            connection.set("scm:git:https://github.com/SuvioMedia/KMediaBridgeNative.git")
+            developerConnection.set("scm:git:ssh://git@github.com/SuvioMedia/KMediaBridgeNative.git")
+            url.set("https://github.com/SuvioMedia/KMediaBridgeNative")
+        }
     }
     publishToMavenCentral()
     if (providers.gradleProperty("signingInMemoryKey").isPresent) signAllPublications()

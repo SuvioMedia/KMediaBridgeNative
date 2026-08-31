@@ -1,0 +1,25 @@
+[versions]
+kotlin = "2.4.10"
+agp = "9.3.1"
+coroutines = "1.11.0"
+graalvm-nativeimage = "25.0.2"
+serialization = "1.11.0"
+jna = "5.19.1"
+vanniktech = "0.37.0"
+dokka = "2.2.0"
+ktlint-plugin = "14.2.0"
+
+[libraries]
+graalvm-nativeimage = { module = "org.graalvm.sdk:nativeimage", version.ref = "graalvm-nativeimage" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+android-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+vanniktech-maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }

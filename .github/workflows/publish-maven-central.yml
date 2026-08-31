@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+name: Publish existing KMediaBridgeNative release to Maven Central
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing immutable release version, including RCs
+        required: true
+        type: string
+      publishing_type:
+        description: Publish after the protected GitHub approval, or explicitly stage for manual testing
+        required: true
+        default: AUTOMATIC
+        type: choice
+        options: [AUTOMATIC, USER_MANAGED]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kmediabridge-native-central-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: maven-central
+    if: >-
+      github.repository == 'SuvioMedia/KMediaBridgeNative' &&
+      github.actor == 'Shusek' &&
+      github.triggering_actor == 'Shusek'
+    env:
+      VERSION: ${{ inputs.version }}
+      PUBLISHING_TYPE: ${{ inputs.publishing_type }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: refs/tags/v${{ inputs.version }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind publication to an immutable release on main
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
+          git show-ref --verify --quiet "refs/tags/v$VERSION"
+          test "$(git describe --tags --exact-match HEAD)" = "v$VERSION"
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+      - name: Download and hash-bind the staged public repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "$RUNNER_TEMP/release" "$RUNNER_TEMP/staging"
+          name="kmedia-bridge-native-$VERSION-maven-repository.tar.gz"
+          gh release download "v$VERSION" --dir "$RUNNER_TEMP/release" --pattern "$name" --pattern SHA256SUMS
+          expected="$(awk -v p="$name" '$2 == p || $2 == "./" p {print $1}' "$RUNNER_TEMP/release/SHA256SUMS")"
+          [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
+          test "$expected" = "$(sha256sum "$RUNNER_TEMP/release/$name" | awk '{print $1}')"
+          tar -xzf "$RUNNER_TEMP/release/$name" -C "$RUNNER_TEMP/staging" --strip-components=1
+          python3 scripts/build_central_bundle.py --normalize \
+            --staging "$RUNNER_TEMP/staging" --version "$VERSION"
+      - name: Sign staged artifacts
+        env:
+          MAVEN_SIGNING_KEY: ${{ secrets.MAVEN_SIGNING_KEY }}
+          MAVEN_SIGNING_PASSWORD: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
+        run: |
+          test -n "$MAVEN_SIGNING_KEY"; test -n "$MAVEN_SIGNING_PASSWORD"
+          umask 077; export GNUPGHOME="$RUNNER_TEMP/gnupg"; mkdir -m 700 "$GNUPGHOME"
+          key="$RUNNER_TEMP/signing-key"; password="$RUNNER_TEMP/signing-password"
+          trap 'rm -f "$key" "$password"; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s' "$MAVEN_SIGNING_KEY" > "$key"; printf '%s' "$MAVEN_SIGNING_PASSWORD" > "$password"
+          unset MAVEN_SIGNING_KEY MAVEN_SIGNING_PASSWORD
+          gpg --batch --homedir "$GNUPGHOME" --import "$key" >/dev/null 2>&1; rm -f "$key"
+          signing_key="$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys | awk -F: '$1 == "sec" {primary = 1; next} primary && $1 == "fpr" {print $10; primary = 0}')"
+          test "$(printf '%s\n' "$signing_key" | sed '/^$/d' | wc -l)" -eq 1
+          [[ "$signing_key" =~ ^[0-9A-Fa-f]{40}$ ]]
+          while IFS= read -r -d '' artifact; do
+            gpg --batch --yes --homedir "$GNUPGHOME" --pinentry-mode loopback --passphrase-file "$password" \
+              --local-user "${signing_key}!" --armor --detach-sign --output "$artifact.asc" "$artifact"
+          done < <(find "$RUNNER_TEMP/staging/cc/suviomedia" -type f -print0 | sort -z)
+      - name: Build and reopen the fail-closed Central bundle
+        run: |
+          bundle="$RUNNER_TEMP/kmedia-bridge-native-$VERSION-central.zip"
+          python3 scripts/build_central_bundle.py --staging "$RUNNER_TEMP/staging" --version "$VERSION" \
+            --epoch "$(git show -s --format=%ct HEAD)" --output "$bundle"
+          unzip -tq "$bundle"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kmediabridge-native-central-${{ inputs.version }}
+          path: ${{ runner.temp }}/kmedia-bridge-native-${{ inputs.version }}-central.zip
+          if-no-files-found: error
+          compression-level: 0
+      - name: Submit to Central Portal and wait for completion
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: |
+          test -n "$MAVEN_CENTRAL_USERNAME"; test -n "$MAVEN_CENTRAL_PASSWORD"
+          umask 077; credentials="$RUNNER_TEMP/central-credentials"; config="$RUNNER_TEMP/central-curl.conf"
+          trap 'rm -f "$credentials" "$config"' EXIT
+          printf '%s:%s' "$MAVEN_CENTRAL_USERNAME" "$MAVEN_CENTRAL_PASSWORD" > "$credentials"
+          unset MAVEN_CENTRAL_USERNAME MAVEN_CENTRAL_PASSWORD
+          authorization="$(base64 --wrap=0 < "$credentials")"; rm -f "$credentials"
+          printf 'header = "Authorization: Bearer %s"\n' "$authorization" > "$config"; unset authorization
+          bundle="$RUNNER_TEMP/kmedia-bridge-native-$VERSION-central.zip"; response="$RUNNER_TEMP/upload-response"
+          curl --config "$config" --fail-with-body --silent --show-error --request POST \
+            --form "bundle=@$bundle;type=application/octet-stream" --output "$response" \
+            --url "https://central.sonatype.com/api/v1/publisher/upload?name=KMediaBridgeNative%20$VERSION&publishingType=$PUBLISHING_TYPE"
+          deployment="$(tr -d '\r\n' < "$response")"; [[ "$deployment" =~ ^[0-9a-fA-F-]{36}$ ]]
+          # Central can remain in PUBLISHING for longer than 15 minutes. Keep
+          # polling the deployment that was already accepted instead of
+          # encouraging a duplicate upload after an otherwise healthy run.
+          for attempt in {1..240}; do
+            state="$(curl --config "$config" --fail-with-body --silent --show-error --request POST \
+              --url "https://central.sonatype.com/api/v1/publisher/status?id=$deployment" | jq -r '.deploymentState')"
+            case "$state" in PUBLISHED) exit 0;; VALIDATED) [[ "$PUBLISHING_TYPE" = USER_MANAGED ]] && exit 0;; FAILED) exit 1;; PENDING|VALIDATING|PUBLISHING);; *) exit 1;; esac
+            sleep 10
+          done
+          exit 1

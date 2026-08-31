@@ -1,0 +1,9 @@
+KMediaBridgeNative
+Copyright (c) 2026 Shusek
+
+This repository contains the public LGPL native bridge used by the separately
+distributed KMediaBridge backend. It does not contain the proprietary Kotlin
+API, backend implementation, packaging policy, or product source.
+
+The Maven artifacts depend on the separately published KMediaFfmpegRuntime and
+package only the matching KMediaBridge native library and its legal metadata.

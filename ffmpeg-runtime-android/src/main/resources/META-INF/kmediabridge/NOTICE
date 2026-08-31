@@ -1,0 +1,4 @@
+This optional artifact contains dynamically linked FFmpeg libraries built from
+the pinned LGPL-only configuration in KMediaBridge. It contains no GPL or
+nonfree FFmpeg components. The FFmpeg libraries remain replaceable shared
+objects in the consuming Android application package.

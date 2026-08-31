@@ -19,7 +19,7 @@ class CentralWorkflowTest(unittest.TestCase):
         self.assertIn("SuvioMedia/KMediaBridgeNative", central)
         self.assertIn("github.triggering_actor == 'Shusek'", central)
         self.assertIn("github.triggering_actor == 'Shusek'", release)
-        self.assertIn("default: USER_MANAGED", central)
+        self.assertIn("default: AUTOMATIC", central)
 
     def test_central_bundle_is_exactly_the_two_public_coordinates(self) -> None:
         root = Path(__file__).resolve().parents[1]

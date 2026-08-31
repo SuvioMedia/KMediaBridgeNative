@@ -10,11 +10,11 @@ on:
         required: true
         type: string
       publishing_type:
-        description: Keep the first release in Central Portal for manual approval
+        description: Publish after the protected GitHub approval, or explicitly stage for manual testing
         required: true
-        default: USER_MANAGED
+        default: AUTOMATIC
         type: choice
-        options: [USER_MANAGED, AUTOMATIC]
+        options: [AUTOMATIC, USER_MANAGED]
 
 permissions:
   contents: read

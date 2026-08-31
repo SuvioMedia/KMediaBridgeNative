@@ -41,17 +41,19 @@ Run `./gradlew verifyAll` before publishing.
 This public runtime is released only from GitHub-hosted runners and published
 to Maven Central. It is not published to the private Suvio kkRepo.
 
-Publication is deliberately split into two manual workflows:
+Publication is deliberately split into two explicitly dispatched workflows:
 
 1. `Build immutable KMediaBridgeNative release` builds and verifies every
    native target, then creates an immutable GitHub Release with the closed
    Maven staging repository.
 2. `Publish existing KMediaBridgeNative release to Maven Central` downloads
    that exact release, verifies its checksum, signs every Maven file, builds a
-   closed Central bundle, and submits it to Central Portal. The default mode
-   leaves the first deployment waiting for manual approval in Central.
+   closed Central bundle, and submits it to Central Portal. After the protected
+   GitHub environment approval, the default mode publishes automatically.
 
 The second workflow uses the protected `maven-central` GitHub environment. It
 requires `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`,
 `MAVEN_SIGNING_KEY`, and `MAVEN_SIGNING_PASSWORD` as environment or repository
-secrets. Neither workflow runs automatically on a tag or commit.
+secrets. `USER_MANAGED` remains available only when an operator explicitly
+wants a validated deployment for manual testing. Neither workflow runs
+automatically on a tag or commit.

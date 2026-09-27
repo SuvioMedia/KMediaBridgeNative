@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include "kmedia_bridge.h"
+#include "kmedia_bridge_hevc.h"
 #include "kmedia_bridge_timestamps.h"
 
 #include <libavcodec/avcodec.h>
@@ -457,6 +458,7 @@ static KmbResult kmb_remux_fragmented_mp4_internal(
     unsigned int index = 0;
     KmbResult bridge_result = KMB_OK;
     KmbWriteState write_state = {write_callback, opaque, 0};
+    KmbHevcPreparation hevc = {0};
     const int uses_callback = write_callback != NULL;
 
     if (output_error != NULL) {
@@ -496,7 +498,14 @@ static KmbResult kmb_remux_fragmented_mp4_internal(
             goto cleanup;
         }
     }
+    result = kmb_hevc_prepare(input, selected_video_track_id, &hevc);
+    if (result < 0) {
+        kmb_set_av_error(output_error, "Could not recover the HEVC decoder configuration", result);
+        bridge_result = KMB_UNSUPPORTED;
+        goto cleanup;
+    }
     if (start_time_us > 0) {
+        kmb_hevc_discard_prefix(&hevc);
         result = avformat_seek_file(input, -1, INT64_MIN, start_time_us, start_time_us, AVSEEK_FLAG_BACKWARD);
         if (result < 0) {
             kmb_set_av_error(output_error, "Could not seek media input", result);
@@ -601,7 +610,7 @@ static KmbResult kmb_remux_fragmented_mp4_internal(
         goto cleanup;
     }
 
-    while ((result = av_read_frame(input, packet)) >= 0) {
+    while ((result = kmb_hevc_read_frame(input, selected_video_track_id, &hevc, packet)) >= 0) {
         AVStream *input_stream = NULL;
         AVStream *output_stream = NULL;
         const int mapped_index = stream_mapping[packet->stream_index];
@@ -648,6 +657,7 @@ static KmbResult kmb_remux_fragmented_mp4_internal(
 
 cleanup:
     av_dict_free(&muxer_options);
+    kmb_hevc_close(&hevc);
     av_packet_free(&packet);
     av_freep(&stream_mapping);
     av_freep(&timestamp_states);

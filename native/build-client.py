@@ -137,6 +137,7 @@ def compile_client(
     runtime.mkdir()
     sources = [
         ROOT / "native/src/kmedia_bridge.c",
+        ROOT / "native/src/kmedia_bridge_hevc.c",
         ROOT / "native/src/kmedia_bridge_subtitles.c",
         ROOT / "native/src/kmedia_bridge_hdr_math.c",
         ROOT / "native/src/kmedia_bridge_tonemap.c",

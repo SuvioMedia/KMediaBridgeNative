@@ -21,6 +21,7 @@ add_library(
     kmediabridge
     SHARED
     src/kmedia_bridge.c
+    src/kmedia_bridge_hevc.c
     src/kmedia_bridge_avfoundation.c
     src/kmedia_bridge_subtitles.c
     src/kmedia_bridge_hdr_math.c
@@ -79,6 +80,17 @@ install(TARGETS kmediabridge LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(FILES include/kmedia_bridge.h DESTINATION include)
 
 if(BUILD_TESTING)
+    add_executable(kmedia_bridge_hevc_test tests/kmedia_bridge_hevc_test.c src/kmedia_bridge_hevc.c)
+    target_include_directories(kmedia_bridge_hevc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(kmedia_bridge_hevc_test PRIVATE PkgConfig::FFMPEG)
+    target_compile_features(kmedia_bridge_hevc_test PRIVATE c_std_11)
+    if(MSVC)
+        target_compile_options(kmedia_bridge_hevc_test PRIVATE /W4 /WX)
+    else()
+        target_compile_options(kmedia_bridge_hevc_test PRIVATE -Wall -Wextra -Werror)
+    endif()
+    add_test(NAME kmedia_bridge_hevc COMMAND kmedia_bridge_hevc_test)
+
     add_executable(kmedia_bridge_timestamps_test tests/kmedia_bridge_timestamps_test.c)
     target_include_directories(
         kmedia_bridge_timestamps_test

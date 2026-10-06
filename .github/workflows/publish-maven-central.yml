@@ -46,7 +46,7 @@ jobs:
           test "$GITHUB_REF" = refs/heads/main
           [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
           git show-ref --verify --quiet "refs/tags/v$VERSION"
-          test "$(git describe --tags --exact-match HEAD)" = "v$VERSION"
+          test "$(git rev-parse "refs/tags/v$VERSION^{commit}")" = "$(git rev-parse HEAD)"
           git merge-base --is-ancestor HEAD refs/remotes/origin/main
       - name: Download and hash-bind the staged public repository
         env:

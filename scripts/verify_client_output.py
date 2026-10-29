@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import re
 import subprocess
 from pathlib import Path
@@ -26,6 +27,17 @@ FORBIDDEN = re.compile(r"(?:libav.+-kmb|libkmediampv_av|libkmediabridge_av)")
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def signature_independent_sha256(path: Path) -> str | None:
+    """Uses the digest implementation that native/build-client.py writes into the manifest."""
+    specification = importlib.util.spec_from_file_location(
+        "kmediabridge_build_client", Path(__file__).resolve().parents[1] / "native/build-client.py"
+    )
+    module = importlib.util.module_from_spec(specification)
+    assert specification.loader is not None
+    specification.loader.exec_module(module)
+    return module.signature_independent_sha256(path)
 
 
 def props(path: Path) -> dict[str, str]:
@@ -57,6 +69,10 @@ def main() -> int:
         raise ValueError("KMediaBridge client manifest target or inventory differs")
     if manifest.get("library.0.name") != expected_name or manifest.get("library.0.sha256") != sha256(library):
         raise ValueError("KMediaBridge client hash differs from its manifest")
+    if args.target.startswith("macos-") and manifest.get(
+        "library.0.signatureIndependentSha256"
+    ) != signature_independent_sha256(library):
+        raise ValueError("KMediaBridge client signature-independent hash differs from its manifest")
     if manifest.get("library.0.role") != "BRIDGE" or not RUNTIME_ID.fullmatch(manifest.get("sharedRuntimeId", "")):
         raise ValueError("KMediaBridge client does not bind one shared runtime ID")
     runtime_version = manifest.get("sharedRuntimeVersion", "")

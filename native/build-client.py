@@ -11,6 +11,7 @@ import json
 import platform
 import re
 import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -40,6 +41,74 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             value.update(block)
     return value.hexdigest()
+
+
+MACHO_MAGIC_64 = 0xFEEDFACF
+LC_SEGMENT_64 = 0x19
+LC_CODE_SIGNATURE = 0x1D
+CSMAGIC_EMBEDDED_SIGNATURE = 0xFADE0CC0
+
+
+def signature_independent_sha256(path: Path) -> str | None:
+    """Digest a signed thin 64-bit Mach-O file without its replaceable code signature.
+
+    Re-signing rewrites the signature blob, its LC_CODE_SIGNATURE size, the __LINKEDIT sizes and
+    may move LC_CODE_SIGNATURE to the end of the load commands. Every other byte before the
+    signature is hashed. Returns None for files that are not 64-bit Mach-O files. Keep this in
+    sync with NativeLibraryDigest.java in KMediaFfmpegRuntime.
+    """
+    data = bytearray(path.read_bytes())
+    if len(data) < 32 or struct.unpack_from("<I", data, 0)[0] != MACHO_MAGIC_64:
+        return None
+    command_count, command_bytes = struct.unpack_from("<II", data, 16)
+    end = 32 + command_bytes
+    if command_count == 0 or command_bytes == 0 or end > len(data):
+        raise ValueError(f"{path.name} has malformed Mach-O load commands")
+    signature = linkedit = None
+    offset = 32
+    for _ in range(command_count):
+        if offset + 8 > end:
+            raise ValueError(f"{path.name} has malformed Mach-O load commands")
+        command, size = struct.unpack_from("<II", data, offset)
+        if size < 8 or size % 8 or offset + size > end:
+            raise ValueError(f"{path.name} has malformed Mach-O load commands")
+        if command == LC_CODE_SIGNATURE:
+            if signature is not None or size != 16:
+                raise ValueError(f"{path.name} has more than one code signature")
+            signature = offset
+        elif command == LC_SEGMENT_64 and size >= 56 and bytes(data[offset + 8:offset + 24]) == b"__LINKEDIT".ljust(16, b"\0"):
+            if linkedit is not None:
+                raise ValueError(f"{path.name} has more than one __LINKEDIT segment")
+            linkedit = offset
+        offset += size
+    if offset != end or signature is None or linkedit is None:
+        raise ValueError(f"{path.name} has no embedded code signature")
+    signature_offset, signature_size = struct.unpack_from("<II", data, signature + 8)
+    vm_size, file_offset, file_size = struct.unpack_from("<QQQ", data, linkedit + 32)
+    if (
+        signature_offset < end
+        or vm_size < file_size
+        or file_offset > signature_offset
+        or signature_offset + signature_size != len(data)
+        or file_offset + file_size != len(data)
+        or signature_size < 12
+    ):
+        raise ValueError(f"{path.name} code signature is not at the end of __LINKEDIT")
+    magic, blob_size = struct.unpack_from(">II", data, signature_offset)
+    if magic != CSMAGIC_EMBEDDED_SIGNATURE or not 12 <= blob_size <= signature_size:
+        raise ValueError(f"{path.name} has a malformed embedded code signature")
+    struct.pack_into("<Q", data, linkedit + 32, 0)
+    struct.pack_into("<Q", data, linkedit + 48, 0)
+    digest = hashlib.sha256(data[:32])
+    offset = 32
+    for _ in range(command_count):
+        size = struct.unpack_from("<I", data, offset + 4)[0]
+        if offset != signature:
+            digest.update(data[offset:offset + size])
+        offset += size
+    digest.update(struct.pack("<III", LC_CODE_SIGNATURE, 16, signature_offset))
+    digest.update(data[end:signature_offset])
+    return digest.hexdigest()
 
 
 def properties(path: Path) -> dict[str, str]:
@@ -241,6 +310,12 @@ def write_manifest(
         ("library.0.name", library.name), ("library.0.sha256", sha256(library)),
         ("library.0.role", "BRIDGE"),
     ]
+    if target.startswith("macos-"):
+        # macOS applications re-sign bundled libraries; loaders accept that through this digest.
+        digest = signature_independent_sha256(library)
+        if digest is None:
+            raise ValueError(f"{library.name} is not a signed Mach-O library")
+        values.append(("library.0.signatureIndependentSha256", digest))
     manifest = "\n".join(f"{key}={value}" for key, value in values) + "\n"
     (output / "manifest.properties").write_bytes(manifest.encode("utf-8"))
 

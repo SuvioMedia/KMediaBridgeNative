@@ -48,6 +48,11 @@ abstract class VerifyDesktopNativePayload : DefaultTask() {
             require(sha256 == manifest.getProperty("library.0.sha256")) {
                 "Bridge payload checksum differs for $platform."
             }
+            if (platform.startsWith("macos-")) {
+                require(manifest.getProperty("library.0.signatureIndependentSha256").orEmpty().matches(Regex("[0-9a-f]{64}"))) {
+                    "Bridge payload for $platform omits its signature-independent checksum."
+                }
+            }
             runtimeIds += manifest.getProperty("sharedRuntimeId").orEmpty()
         }
         require(runtimeIds.size == 1 && runtimeIds.single().isNotBlank()) {
